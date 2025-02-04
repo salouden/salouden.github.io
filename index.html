@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Eki Stamp Tracker</title>
+    <title>Project Selection</title>
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
 </head>
 
-<body>
-    <!-- Search bar and suggestions -->
-    <div id="search-container">
-        <input type="text" id="stationSearch" placeholder="Search for a station..." />
-        <div id="suggestions"></div>
-    </div>
+<body class="container center-align">
+    <h1>Choose Your Tracker</h1>
     
-    <!-- Full-screen map -->
-    <div id="map"></div>
+    <div class="button-container">
+        <a href="/eki_stamp_book/index.html" class="waves-effect waves-light btn-large blue">
+            <i class="material-icons left">place</i>Eki Stamp Tracker
+        </a>
+        <a href="/railway_ride_tracker/index.html" class="waves-effect waves-light btn-large green">
+            <i class="material-icons left">train</i>Railway Ride Tracker
+        </a>
+    </div>
 
-    <script type="module" src="js/main.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 </body>
 </html>
