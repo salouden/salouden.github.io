@@ -23,8 +23,15 @@ export const fetchStations = (map) => {
         })
         .catch(error => {
             console.error('Error fetching the stations data:', error);
-            alert('Failed to load stations data. Please try again later.');
+        
+            if (error.response) {
+                console.error('Response status:', error.response.status);
+                console.error('Response text:', error.response.statusText);
+            }
+        
+            alert('Failed to load stations data.');
         });
+        
 };
 
 const createMarker = (station, map) => {
