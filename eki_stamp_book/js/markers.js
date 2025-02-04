@@ -4,7 +4,7 @@ export const markers = [];
 const maxDisplayedMarkers = 300; // Maximum number of markers to display
 
 export const fetchStations = (map) => {
-    Promise.all([fetch('../data/stations.json'), fetchExcludedLines()])
+    Promise.all([fetch('./data/stations.json'), fetchExcludedLines()])
         .then(([response, excludedLines]) => response.json().then(data => ({ data, excludedLines })))
         .then(({ data, excludedLines }) => {
             data.forEach(stationGroup => {
