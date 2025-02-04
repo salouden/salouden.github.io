@@ -1,6 +1,6 @@
 // lines.js
 export const addTrainLinesToMap = (map) => {
-    fetch('../data/railroad-section.geojson') 
+    fetch('./data/railroad-section.geojson') 
         .then(response => response.json())
         .then(data => {
             const colorPalette = [

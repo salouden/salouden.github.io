@@ -100,7 +100,7 @@ const updateMarkerSizes = (map) => {
 
 // Function to fetch excluded lines from no-stamps-lines.json
 const fetchExcludedLines = () => {
-    return fetch('../data/no-stamps-lines.json')
+    return fetch('./data/no-stamps-lines.json')
         .then(response => response.json())
         .then(data => data.map(line => line.line_code)); // Return array of line codes
 };
