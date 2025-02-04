@@ -1,0 +1,49 @@
+/* Ensure the body and HTML take up 100% height */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Make the map full-screen */
+#map {
+    height: 100%;
+    width: 100%;
+}
+
+/* Position the search bar in the top-right corner of the map */
+#search-container {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 1000; /* Ensure it's above the map */
+}
+
+#stationSearch {
+    padding: 10px;
+    font-size: 14px;
+    width: 250px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+#suggestions {
+    position: absolute;
+    top: 40px; /* Positioned below the search input */
+    right: 0;
+    width: 250px;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    z-index: 1001;
+    display: none; /* Hidden by default, shown when there are suggestions */
+}
+
+#suggestions div {
+    padding: 10px;
+    cursor: pointer;
+}
+
+#suggestions div:hover {
+    background-color: #f0f0f0;
+}

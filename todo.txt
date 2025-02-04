@@ -1,0 +1,17 @@
+#Must have
+Verify if Search is still working
+
+#Should have
+Incorporate railway lines
+Find a dataset of non-railway stamps > Add stamps for points of interest
+
+#Could have
+Add a JP/EN toggle > Implement station name change
+
+#Nice to have
+Host publicly
+Add ads - check licenses of stations datasets and lines datasets
+Implement sessions
+ 
+#Bugs
+- Icon size blocked too small after clicking on it -> can reproduce?
