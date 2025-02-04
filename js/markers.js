@@ -30,20 +30,20 @@ export const fetchStations = (map) => {
 const createMarker = (station, map) => {
     const stationCode = station.code;
 
-    // DEBUG - Skip markers for stations with empty code or line_code
+    // Skip markers for stations with empty code or line_code
     if (!stationCode || !station.line_code) {
         console.warn(`Skipping station with missing code or line:`, station);
         return;
     }
     
-    //extracts station name from the full (line code).(station code) and inserts spaces before caps
+    // Extracts station name from the full (line code).(station code) and inserts spaces before caps
     const stationName = stationCode.includes('.') 
-    ? stationCode.split('.').pop().replace(/([A-Z])/g, ' $1').trim() 
-    : stationCode.replace(/([A-Z])/g, ' $1').trim();
+        ? stationCode.split('.').pop().replace(/([A-Z])/g, ' $1').trim() 
+        : stationCode.replace(/([A-Z])/g, ' $1').trim();
 
     const lat = station.lat;
     const lon = station.lon;
-    const isCollected = localStorage.getItem(stationName) === "true";
+    const isCollected = localStorage.getItem(stationCode) === "true"; // Use stationCode for retrieval
 
     const stationMarker = L.marker([lat, lon], {
         icon: createStationIcon(isCollected, map.getZoom())  // Use initial zoom to set size
@@ -51,7 +51,7 @@ const createMarker = (station, map) => {
 
     stationMarker.stationName = stationName;
 
-    //formats line name with spaces instead of dots, and inserts spaces before caps
+    // Formats line name with spaces instead of dots, and inserts spaces before caps
     stationMarker.bindPopup(`
         <strong>${stationName}</strong><br>
         <span style="font-size: 12px;">Lines: ${station.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim()}</span>
@@ -62,7 +62,7 @@ const createMarker = (station, map) => {
 
     stationMarker.on('click', () => {
         const newState = !isCollected;
-        localStorage.setItem(stationName, newState ? "true" : "false");
+        localStorage.setItem(stationCode, newState ? "true" : "false"); // Store based on stationCode
         stationMarker.setIcon(createStationIcon(newState, map.getZoom()));
     });
 
@@ -93,7 +93,7 @@ const loadMarkersInView = (map) => {
 const updateMarkerSizes = (map) => {
     const zoom = map.getZoom();
     markers.forEach(marker => {
-        const isCollected = localStorage.getItem(marker.stationName) === "true";
+        const isCollected = localStorage.getItem(marker.stationName) === "true"; // You may want to keep this for display purposes
         marker.setIcon(createStationIcon(isCollected, zoom));
     });
 };
