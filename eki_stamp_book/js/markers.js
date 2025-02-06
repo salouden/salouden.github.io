@@ -16,7 +16,7 @@ const toggleStationCollected = (stationCode) => {
 };
 
 export const fetchStations = (map) => {
-    Promise.all([fetch('./data/stations.json'), fetchExcludedLines()])
+    Promise.all([fetch('../data/stations.json'), fetchExcludedLines()])
         .then(([response, excludedLines]) => response.json().then(data => ({ data, excludedLines })))
         .then(({ data, excludedLines }) => {
             data.forEach(stationGroup => {
@@ -93,7 +93,7 @@ const updateMarkerSizes = (map) => {
 };
 
 const fetchExcludedLines = () => {
-    return fetch('./data/no-stamps-lines.json')
+    return fetch('../data/no-stamps-lines.json')
         .then(response => response.json())
         .then(data => data.map(line => line.line_code));
 };
