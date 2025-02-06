@@ -7,6 +7,17 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const correctPassword = "sam"; // Change ce mot de passe
+            let enteredPassword = prompt("Input password, now:");
+    
+            while (enteredPassword !== correctPassword) {
+                enteredPassword = prompt("Booh, wrong");
+            }
+        });
+    </script>
+    
 </head>
 
 <body class="container center-align">

@@ -1,83 +1,71 @@
 import { createStationIcon } from './utils.js';
+import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
 export const markers = [];
-const maxDisplayedMarkers = 300; // Maximum number of markers to display
+const maxDisplayedMarkers = 300;
+const db = getDatabase(); // Connexion à Firebase
+
+// Fonction pour marquer une station visitée
+const toggleStationCollected = (stationCode) => {
+    const stationRef = ref(db, `visited_stations/${stationCode}`);
+
+    get(stationRef).then(snapshot => {
+        const isCollected = snapshot.exists() ? !snapshot.val() : true;
+        set(stationRef, isCollected);
+    });
+};
 
 export const fetchStations = (map) => {
-    Promise.all([fetch('../data/stations.json'), fetchExcludedLines()])
+    Promise.all([fetch('./data/stations.json'), fetchExcludedLines()])
         .then(([response, excludedLines]) => response.json().then(data => ({ data, excludedLines })))
         .then(({ data, excludedLines }) => {
             data.forEach(stationGroup => {
                 stationGroup.stations.forEach(station => {
-                    // Exclude stations based on line_code
                     if (!excludedLines.includes(station.line_code)) {
                         createMarker(station, map);
                     }
                 });
             });
 
-            // Manage markers within map bounds
             loadMarkersInView(map);
             map.on('moveend', () => loadMarkersInView(map));
             map.on('zoomend', () => updateMarkerSizes(map));
         })
         .catch(error => {
-            console.error('Error fetching the stations data:', error);
-        
-            if (error.response) {
-                console.error('Response status:', error.response.status);
-                console.error('Response text:', error.response.statusText);
-            }
-        
-            alert('Failed to load stations data.');
+            console.error('Erreur chargement des stations:', error);
+            alert('Échec du chargement des données.');
         });
-        
 };
 
 const createMarker = (station, map) => {
     const stationCode = station.code;
+    if (!stationCode || !station.line_code) return;
 
-    // Skip markers for stations with empty code or line_code
-    if (!stationCode || !station.line_code) {
-        console.warn(`Skipping station with missing code or line:`, station);
-        return;
-    }
-    
-    // Extracts station name from the full (line code).(station code) and inserts spaces before caps
-    const stationName = stationCode.includes('.') 
-        ? stationCode.split('.').pop().replace(/([A-Z])/g, ' $1').trim() 
-        : stationCode.replace(/([A-Z])/g, ' $1').trim();
+    const stationName = stationCode.split('.').pop().replace(/([A-Z])/g, ' $1').trim();
+    const lat = station.lat, lon = station.lon;
 
-    const lat = station.lat;
-    const lon = station.lon;
-    const isCollected = localStorage.getItem(stationCode) === "true"; // Use stationCode for retrieval
+    get(ref(db, `visited_stations/${stationCode}`)).then(snapshot => {
+        const isCollected = snapshot.exists() ? snapshot.val() : false;
 
-    const stationMarker = L.marker([lat, lon], {
-        icon: createStationIcon(isCollected, map.getZoom())  // Use initial zoom to set size
+        const stationMarker = L.marker([lat, lon], {
+            icon: createStationIcon(isCollected, map.getZoom())
+        });
+
+        stationMarker.bindPopup(`
+            <strong>${stationName}</strong><br>
+            <span style="font-size: 12px;">Lignes: ${station.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim()}</span>
+        `, { offset: L.point(0, -10) });
+
+        stationMarker.on('click', () => {
+            toggleStationCollected(stationCode);
+            stationMarker.setIcon(createStationIcon(!isCollected, map.getZoom()));
+        });
+
+        markers.push(stationMarker);
+        stationMarker.addTo(map);
     });
-
-    stationMarker.stationName = stationName;
-
-    // Formats line name with spaces instead of dots, and inserts spaces before caps
-    stationMarker.bindPopup(`
-        <strong>${stationName}</strong><br>
-        <span style="font-size: 12px;">Lines: ${station.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim()}</span>
-    `, { offset: L.point(0, -10) });
-
-    stationMarker.on('mouseover', () => stationMarker.openPopup());
-    stationMarker.on('mouseout', () => stationMarker.closePopup());
-
-    stationMarker.on('click', () => {
-        const newState = !isCollected;
-        localStorage.setItem(stationCode, newState ? "true" : "false"); // Store based on stationCode
-        stationMarker.setIcon(createStationIcon(newState, map.getZoom()));
-    });
-
-    markers.push(stationMarker);
-    stationMarker.addTo(map);
 };
 
-// Function to load markers within the visible map bounds
 const loadMarkersInView = (map) => {
     const bounds = map.getBounds();
     let displayedMarkers = 0;
@@ -88,26 +76,24 @@ const loadMarkersInView = (map) => {
                 marker.addTo(map);
                 displayedMarkers++;
             }
-        } else {
-            if (map.hasLayer(marker)) {
-                map.removeLayer(marker);
-            }
+        } else if (map.hasLayer(marker)) {
+            map.removeLayer(marker);
         }
     });
 };
 
-// Function to update marker sizes dynamically based on zoom level
 const updateMarkerSizes = (map) => {
     const zoom = map.getZoom();
     markers.forEach(marker => {
-        const isCollected = localStorage.getItem(marker.stationName) === "true"; // You may want to keep this for display purposes
-        marker.setIcon(createStationIcon(isCollected, zoom));
+        get(ref(db, `visited_stations/${marker.stationName}`)).then(snapshot => {
+            const isCollected = snapshot.exists() ? snapshot.val() : false;
+            marker.setIcon(createStationIcon(isCollected, zoom));
+        });
     });
 };
 
-// Function to fetch excluded lines from no-stamps-lines.json
 const fetchExcludedLines = () => {
     return fetch('./data/no-stamps-lines.json')
         .then(response => response.json())
-        .then(data => data.map(line => line.line_code)); // Return array of line codes
+        .then(data => data.map(line => line.line_code));
 };
