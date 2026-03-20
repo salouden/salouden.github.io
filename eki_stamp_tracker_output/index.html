@@ -6,387 +6,873 @@
     <title>Eki Stamp Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&family=Space+Mono&display=swap" rel="stylesheet">
     <style>
-        html, body { height: 100%; margin: 0; padding: 0; }
+        /* ── Reset & base ─────────────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        #map { height: 100%; width: 100%; }
+        :root {
+            --bg:         #0f0f12;
+            --surface:    #18181e;
+            --surface2:   #22222a;
+            --border:     #2e2e3a;
+            --text:       #e4e4ec;
+            --muted:      #686878;
+            --accent:     #7eb8f7;
+            --accent-dim: rgba(126,184,247,0.12);
+            --stamp-on:   #f7c948;
+            --stamp-off:  #3a3a48;
+            --radius:     6px;
+            --ui-font:    'Space Mono', monospace;
+            --jp-font:    'Zen Kaku Gothic New', sans-serif;
+        }
 
-        #search-container { position: absolute; top: 20px; right: 20px; z-index: 1000; }
+        html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--ui-font); }
+
+        /* ── Map ──────────────────────────────────────────────────────────── */
+        #map { height: 100vh; width: 100%; }
+
+        /* Dark map tile filter */
+        .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.85) saturate(0.7); }
+        /* Keep markers/popups unfiltered */
+        .leaflet-marker-pane,
+        .leaflet-popup-pane,
+        .leaflet-overlay-pane { filter: none; }
+
+        /* Leaflet attribution dark */
+        .leaflet-control-attribution {
+            background: rgba(15,15,18,0.85) !important;
+            color: var(--muted) !important;
+            font-size: 10px;
+        }
+        .leaflet-control-attribution a { color: var(--accent) !important; }
+        .leaflet-control-zoom a {
+            background: var(--surface) !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+        }
+        .leaflet-control-zoom a:hover { background: var(--surface2) !important; }
+
+        /* ── Stamp marker ─────────────────────────────────────────────────── */
+        .stamp-marker {
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%;
+            transition: transform 0.15s ease;
+            cursor: pointer;
+        }
+        .stamp-marker.collected {
+            background: var(--stamp-on);
+            box-shadow: 0 0 0 2px rgba(247,201,72,0.35), 0 2px 8px rgba(247,201,72,0.25);
+        }
+        .stamp-marker.uncollected {
+            background: var(--stamp-off);
+            border: 1.5px solid #4a4a5a;
+        }
+        .stamp-marker svg { display: block; }
+
+        /* Pulse animation on collect */
+        @keyframes stamp-pulse {
+            0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(247,201,72,0.6); }
+            40%  { transform: scale(1.4); box-shadow: 0 0 0 8px rgba(247,201,72,0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(247,201,72,0); }
+        }
+        .stamp-marker.pulse { animation: stamp-pulse 0.4s ease forwards; }
+
+        /* ── UI panel shared styles ───────────────────────────────────────── */
+        .ui-panel {
+            position: absolute;
+            z-index: 1000;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        }
+
+        .ui-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 14px;
+            font-family: var(--ui-font); font-size: 11px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            background: var(--surface); color: var(--text);
+            border: 1px solid var(--border); border-radius: var(--radius);
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .ui-btn:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+        .ui-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+        /* ── Search ───────────────────────────────────────────────────────── */
+        #search-container {
+            position: absolute; top: 16px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000; width: min(360px, calc(100vw - 32px));
+        }
+
+        #search-wrap {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            transition: border-color 0.15s;
+        }
+        #search-wrap:focus-within { border-color: var(--accent); }
+
+        #search-icon { color: var(--muted); flex-shrink: 0; }
 
         #stationSearch {
-            padding: 10px; font-size: 14px; width: 250px;
-            border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+            flex: 1; background: none; border: none; outline: none;
+            font-family: var(--ui-font); font-size: 13px; color: var(--text);
         }
+        #stationSearch::placeholder { color: var(--muted); }
 
-        /* FIX: top: 100% so dropdown sits directly below input */
         #suggestions {
-            position: absolute; top: 100%; right: 0; width: 250px;
-            background: white; border: 1px solid #ccc; border-radius: 4px;
-            z-index: 1001; display: none; box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            display: none; overflow: hidden;
         }
-        #suggestions div { padding: 10px; cursor: pointer; font-size: 13px; }
-        #suggestions div:hover { background: #f0f0f0; }
 
+        .suggestion-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-item:hover { background: var(--surface2); }
+        .suggestion-item .jp { font-family: var(--jp-font); font-size: 14px; }
+        .suggestion-item .en { color: var(--muted); font-size: 11px; }
+        .suggestion-item .collected-badge {
+            font-size: 10px; padding: 2px 6px;
+            background: rgba(247,201,72,0.15); color: var(--stamp-on);
+            border-radius: 10px; border: 1px solid rgba(247,201,72,0.3);
+            flex-shrink: 0; margin-left: 8px;
+        }
+
+        /* ── Controls row ─────────────────────────────────────────────────── */
         #controls {
-            position: absolute; top: 70px; right: 20px;
-            z-index: 1000; display: flex; gap: 8px;
+            position: absolute; top: 16px; right: 16px;
+            z-index: 1000; display: flex; gap: 6px;
         }
-        #controls button {
-            padding: 8px 14px; font-size: 13px; font-weight: 600;
-            background: white; border: 1px solid #ccc; border-radius: 4px;
-            cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-        }
-        #controls button:hover { background: #f5f5f5; }
 
+        /* ── Popup ────────────────────────────────────────────────────────── */
+        .leaflet-popup-content-wrapper {
+            background: var(--surface) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: var(--radius) !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important;
+            padding: 0 !important;
+        }
+        .leaflet-popup-tip { background: var(--surface) !important; }
+        .leaflet-popup-content { margin: 0 !important; }
+
+        .popup-inner {
+            padding: 14px 16px;
+            min-width: 180px;
+        }
+        .popup-name {
+            font-family: var(--jp-font); font-size: 17px; font-weight: 700;
+            color: var(--text); margin-bottom: 2px;
+        }
+        .popup-name-en {
+            font-size: 11px; color: var(--muted); letter-spacing: 0.06em;
+            margin-bottom: 10px;
+        }
+        .popup-line {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 11px; color: var(--muted);
+            background: var(--surface2);
+            border-radius: 4px; padding: 3px 7px;
+            margin-bottom: 12px;
+        }
+        .popup-line-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .popup-status {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .popup-status.stamped { color: var(--stamp-on); }
+        .popup-status.unstamped { color: var(--muted); }
+        .popup-status-icon { font-size: 14px; }
+
+        /* ── Session panel ────────────────────────────────────────────────── */
         #session-panel {
-            position: absolute; top: 110px; right: 20px; z-index: 1000;
-            background: white; border: 1px solid #ccc; border-radius: 6px;
-            padding: 16px; width: 220px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            position: absolute; top: 58px; right: 16px;
+            z-index: 1000; width: 260px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            overflow: hidden;
         }
-        #session-panel h3 { margin: 0 0 8px; font-size: 14px; }
-        #session-stats { font-size: 13px; color: #555; margin: 0 0 12px; }
 
-        .session-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
-        .session-buttons button {
-            flex: 1; padding: 7px 8px; font-size: 12px;
-            border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white;
+        #session-header {
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid var(--border);
         }
-        .session-buttons button:hover { background: #f5f5f5; }
-        .session-buttons button.danger { color: #c0392b; border-color: #c0392b; }
-        .session-buttons button.danger:hover { background: #fdf2f2; }
+        #session-user-row {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+        }
+        #session-avatar {
+            width: 28px; height: 28px; border-radius: 50%;
+            background: var(--accent-dim); border: 1px solid var(--accent);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700; color: var(--accent);
+            flex-shrink: 0;
+        }
+        #session-username {
+            font-size: 13px; font-weight: 700; color: var(--text);
+        }
+        #session-username.placeholder { color: var(--muted); font-weight: 400; font-style: italic; }
+
+        #session-stats {
+            font-size: 11px; color: var(--muted);
+            display: flex; align-items: center; gap: 8px;
+        }
+        #session-progress-bar {
+            flex: 1; height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden;
+        }
+        #session-progress-fill {
+            height: 100%; background: var(--stamp-on);
+            border-radius: 2px; transition: width 0.4s ease;
+            width: 0%;
+        }
+
+        #session-body { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+
+        #session-name-input {
+            width: 100%; padding: 8px 10px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 4px; color: var(--text);
+            font-family: var(--ui-font); font-size: 12px; outline: none;
+            transition: border-color 0.15s;
+        }
+        #session-name-input:focus { border-color: var(--accent); }
+        #session-name-input::placeholder { color: var(--muted); }
+
+        .session-row { display: flex; gap: 6px; }
+
+        .session-btn {
+            flex: 1; padding: 7px 10px;
+            font-family: var(--ui-font); font-size: 10px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            background: var(--surface2); color: var(--text);
+            border: 1px solid var(--border); border-radius: 4px;
+            cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .session-btn:hover { background: var(--border); }
+        .session-btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+        .session-btn.primary:hover { background: rgba(126,184,247,0.2); }
+        .session-btn.danger { color: #f77e7e; border-color: #5a2a2a; }
+        .session-btn.danger:hover { background: rgba(247,126,126,0.1); border-color: #f77e7e; }
+
+        /* ── Name modal ───────────────────────────────────────────────────── */
+        #name-modal-overlay {
+            position: fixed; inset: 0; z-index: 2000;
+            background: rgba(0,0,0,0.7);
+            display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+        #name-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 28px 28px 24px;
+            width: min(340px, calc(100vw - 32px));
+            box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+        }
+        #name-modal h2 {
+            font-family: var(--jp-font); font-size: 20px;
+            color: var(--text); margin-bottom: 6px;
+        }
+        #name-modal p { font-size: 12px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+        #modal-name-input {
+            width: 100%; padding: 10px 12px; margin-bottom: 8px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 4px; color: var(--text);
+            font-family: var(--jp-font); font-size: 16px; outline: none;
+            transition: border-color 0.15s;
+        }
+        #modal-name-input:focus { border-color: var(--accent); }
+        #modal-name-hint { font-size: 11px; color: var(--muted); margin-bottom: 18px; }
+        .modal-buttons { display: flex; gap: 8px; }
+        .modal-btn {
+            flex: 1; padding: 10px;
+            font-family: var(--ui-font); font-size: 11px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            border-radius: 4px; cursor: pointer; border: 1px solid var(--border);
+            transition: background 0.15s, color 0.15s;
+        }
+        .modal-btn.secondary { background: var(--surface2); color: var(--muted); }
+        .modal-btn.secondary:hover { color: var(--text); }
+        .modal-btn.confirm { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+        .modal-btn.confirm:hover { background: rgba(126,184,247,0.2); }
+
+        /* ── Toast ────────────────────────────────────────────────────────── */
+        #toast {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+            z-index: 3000;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 10px 18px;
+            font-size: 12px; color: var(--text);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0; pointer-events: none; white-space: nowrap;
+        }
+        #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+        /* ── Stats bar ────────────────────────────────────────────────────── */
+        #stats-bar {
+            position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+            z-index: 1000;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 20px; padding: 6px 16px;
+            font-size: 11px; color: var(--muted);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+            letter-spacing: 0.06em;
+        }
+        #stats-bar span { color: var(--stamp-on); font-weight: 700; }
 
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
+
+    <!-- Search -->
     <div id="search-container">
-        <input type="text" id="stationSearch" placeholder="Search for a station..." />
+        <div id="search-wrap">
+            <svg id="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="stationSearch" placeholder="Search station…" autocomplete="off" />
+        </div>
         <div id="suggestions"></div>
     </div>
 
+    <!-- Controls -->
     <div id="controls">
-        <button id="lang-toggle" title="Toggle Japanese/English station names">JP</button>
-        <button id="session-toggle" title="Stamp collection session">Session</button>
+        <button class="ui-btn" id="lang-toggle">JP</button>
+        <button class="ui-btn" id="session-toggle">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+            Session
+        </button>
     </div>
 
+    <!-- Session panel -->
     <div id="session-panel" class="hidden">
-        <h3>Stamp Collection</h3>
-        <p id="session-stats">0 / 0 collected</p>
-        <div class="session-buttons">
-            <button id="session-export">Export</button>
-            <button id="session-import">Import</button>
-            <button id="session-reset" class="danger">Reset</button>
+        <div id="session-header">
+            <div id="session-user-row">
+                <div id="session-avatar">?</div>
+                <div id="session-username" class="placeholder">No session</div>
+            </div>
+            <div id="session-stats">
+                <span id="session-count">0 / 0 collected</span>
+                <div id="session-progress-bar"><div id="session-progress-fill"></div></div>
+            </div>
         </div>
-        <input type="file" id="session-import-file" accept=".json" style="display:none">
+        <div id="session-body">
+            <input type="text" id="session-name-input" placeholder="Enter your name…" autocomplete="off" />
+            <div class="session-row">
+                <button class="session-btn primary" id="session-load">Load</button>
+                <button class="session-btn" id="session-save">Save</button>
+            </div>
+            <div class="session-row">
+                <button class="session-btn" id="session-export">Export JSON</button>
+                <button class="session-btn danger" id="session-reset">Reset</button>
+            </div>
+            <input type="file" id="session-import-file" accept=".json" style="display:none">
+        </div>
     </div>
 
+    <!-- Name modal (shown on first visit) -->
+    <div id="name-modal-overlay" class="hidden">
+        <div id="name-modal">
+            <h2>ようこそ！</h2>
+            <p>Enter your name to track your stamp collection. Your stamps are saved locally per name, so you can switch between collectors.</p>
+            <input type="text" id="modal-name-input" placeholder="Your name" maxlength="32" />
+            <div id="modal-name-hint">You can change this later in the Session panel.</div>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" id="modal-skip">Skip</button>
+                <button class="modal-btn confirm" id="modal-confirm">Start collecting →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast"></div>
+
+    <!-- Stats bar -->
+    <div id="stats-bar"><span id="bar-count">0</span> stamps collected</div>
+
+    <!-- Map -->
     <div id="map"></div>
 
     <script>
-        // ── Utils ─────────────────────────────────────────────────────────────
+    // ── Palette ───────────────────────────────────────────────────────────────
+    // Harmonious muted palette — distinct but not neon/flashy
+    // Based on a desaturated categorical palette readable on dark background
+    const LINE_PALETTE = [
+        '#6fa8dc', '#e06c75', '#98c379', '#e5c07b', '#c678dd',
+        '#56b6c2', '#d19a66', '#7eb8f7', '#be8af7', '#61afef',
+        '#e88d8d', '#82c496', '#f0a070', '#a3b8cc', '#c49fd4',
+        '#79c9c9', '#d4956a', '#88b4e0', '#e8a0c0', '#9ec475',
+        '#b0a0e0', '#70c4b0', '#e0b870', '#8ab8d0', '#d490a8',
+        '#78d0a0', '#e0c080', '#90a8d8', '#d8a898', '#80c8b0'
+    ];
 
-        const createStationIcon = (isCollected, zoom) => {
-            // FIX: min 8px so icons never become unclickably small
-            const iconSize = Math.max(8, 16 * Math.pow(1.2, zoom - 12));
-            // FIX: relative paths (absolute /img/... breaks on non-root deployments)
-            return L.divIcon({
-                html: `<div style="text-align:center;"><img src="${isCollected ? 'img/full-radio.png' : 'img/empty-radio.png'}" width="${iconSize}" height="${iconSize}"></div>`,
-                iconAnchor: [iconSize / 2, iconSize],
-                className: '',
-                iconSize: [iconSize, iconSize]
-            });
-        };
+    const hashName = (name) => {
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+        return h;
+    };
 
-        // ── Map ───────────────────────────────────────────────────────────────
+    // ── Session / user state ──────────────────────────────────────────────────
+    let currentUser = localStorage.getItem('eki_current_user') || '';
+    let currentLang = localStorage.getItem('eki_lang') || 'en';
 
-        const initializeMap = () => {
-            const map = L.map('map').setView([35.682839, 139.759455], 13);
-            L.tileLayer('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            }).addTo(map);
-            return map;
-        };
+    const storageKey = (stationCode) => currentUser ? `${currentUser}:${stationCode}` : stationCode;
 
-        // ── Lines ─────────────────────────────────────────────────────────────
+    const isCollected = (code) => localStorage.getItem(storageKey(code)) === 'true';
 
-        // FIX: stable color via hash of line name, not array index (index shifts if data order changes)
-        const hashLineName = (name) => {
-            let hash = 0;
-            for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-            return hash;
-        };
+    const setCollected = (code, val) => {
+        localStorage.setItem(storageKey(code), val ? 'true' : 'false');
+    };
 
-        const CACHE_TTL = 24 * 60 * 60 * 1000;
+    const isStampKey = (k, user) => {
+        if (user) return k.startsWith(user + ':') && k.includes('.');
+        return k.includes('.') && !k.includes(':');
+    };
 
-        const renderLines = (map, data) => {
-            const palette = [
-                '#FF4500','#FF6F00','#FFA500','#FFC300','#FFD700','#FFF700','#D4FF00','#A8FF00','#7FFF00','#50FF00',
-                '#00FF50','#00FF87','#00FFB2','#00FFD4','#00FFEB','#00E5FF','#00CFFF','#00AFFF','#0087FF','#005FFF',
-                '#003AFF','#2A00FF','#5400FF','#7500FF','#9A00FF','#BF00FF','#DF00FF','#FF00E0','#FF00B2','#FF0087'
-            ];
-            const colorMap = {};
-            data.features.forEach(feature => {
-                const name = feature.properties.路線名;
-                if (!colorMap[name]) colorMap[name] = palette[hashLineName(name) % palette.length];
-                const polyline = L.polyline(
-                    feature.geometry.coordinates.map(c => [c[1], c[0]]),
-                    { color: colorMap[name], weight: 2, opacity: 0.8 }
-                ).addTo(map);
-                polyline.bindPopup(`<strong>${name}</strong>`);
-                polyline.on('mouseover', () => polyline.openPopup());
-                polyline.on('mouseout', () => polyline.closePopup());
-            });
-        };
+    const getStampKeys = (user) =>
+        Object.keys(localStorage).filter(k => isStampKey(k, user || currentUser));
 
-        const addTrainLinesToMap = (map) => {
-            // FEATURE: sessionStorage cache to skip re-fetch on reload
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    let toastTimer;
+    const showToast = (msg, duration = 2200) => {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+    };
+
+    // ── Stats ─────────────────────────────────────────────────────────────────
+    const updateStats = () => {
+        const all = getStampKeys(currentUser);
+        const done = all.filter(k => localStorage.getItem(k) === 'true').length;
+        const total = markers.length;
+
+        document.getElementById('session-count').textContent = `${done} / ${total} collected`;
+        document.getElementById('bar-count').textContent = done;
+
+        const pct = total > 0 ? (done / total) * 100 : 0;
+        document.getElementById('session-progress-fill').style.width = pct + '%';
+    };
+
+    // ── Map ───────────────────────────────────────────────────────────────────
+    const initializeMap = () => {
+        const map = L.map('map', { zoomControl: true }).setView([35.682839, 139.759455], 13);
+        // CartoDB dark tiles
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd', maxZoom: 20
+        }).addTo(map);
+        return map;
+    };
+
+    // ── Lines ─────────────────────────────────────────────────────────────────
+    const CACHE_TTL = 24 * 60 * 60 * 1000;
+    const lineColorMap = {};
+
+    const renderLines = (map, data) => {
+        data.features.forEach(feature => {
+            const name = feature.properties.路線名;
+            if (!lineColorMap[name]) {
+                lineColorMap[name] = LINE_PALETTE[hashName(name) % LINE_PALETTE.length];
+            }
+            const polyline = L.polyline(
+                feature.geometry.coordinates.map(c => [c[1], c[0]]),
+                { color: lineColorMap[name], weight: 2.5, opacity: 0.75 }
+            ).addTo(map);
+            polyline.bindPopup(`<div class="popup-inner"><div class="popup-name">${name}</div></div>`);
+            polyline.on('mouseover', () => polyline.openPopup());
+            polyline.on('mouseout', () => polyline.closePopup());
+        });
+    };
+
+    const addTrainLinesToMap = (map) => {
+        try {
+            const cached = sessionStorage.getItem('eki_lines');
+            const ts = sessionStorage.getItem('eki_lines_ts');
+            if (cached && ts && Date.now() - Number(ts) < CACHE_TTL) {
+                renderLines(map, JSON.parse(cached)); return;
+            }
+        } catch(e) {}
+        fetch('data/railroad-section.geojson').then(r => r.json()).then(data => {
             try {
-                const cached = sessionStorage.getItem('eki_lines');
-                const ts = sessionStorage.getItem('eki_lines_ts');
-                if (cached && ts && Date.now() - Number(ts) < CACHE_TTL) {
-                    renderLines(map, JSON.parse(cached)); return;
-                }
+                sessionStorage.setItem('eki_lines', JSON.stringify(data));
+                sessionStorage.setItem('eki_lines_ts', String(Date.now()));
             } catch(e) {}
-            fetch('data/railroad-section.geojson').then(r => r.json()).then(data => {
-                try { sessionStorage.setItem('eki_lines', JSON.stringify(data)); sessionStorage.setItem('eki_lines_ts', String(Date.now())); } catch(e) {}
-                renderLines(map, data);
-            }).catch(err => console.error('Error loading train lines:', err));
-        };
+            renderLines(map, data);
+        }).catch(err => console.error('Error loading train lines:', err));
+    };
 
-        // ── Markers ───────────────────────────────────────────────────────────
+    // ── Markers ───────────────────────────────────────────────────────────────
+    const markers = [];
 
-        const markers = [];
-        let currentLang = localStorage.getItem('eki_lang') || 'en';
+    const getDisplayName = (station, code) => {
+        if (currentLang === 'jp' && station.name_kanji) return station.name_kanji;
+        const raw = code.includes('.') ? code.split('.').pop() : code;
+        return raw.replace(/([A-Z])/g, ' $1').trim() || station.name_kanji || code;
+    };
 
-        const getDisplayName = (station, code) => {
-            if (currentLang === 'jp' && station.name_kanji) return station.name_kanji;
-            const raw = code.includes('.') ? code.split('.').pop() : code;
-            return raw.replace(/([A-Z])/g, ' $1').trim() || station.name_kanji || code;
-        };
+    const getEnName = (code) => {
+        const raw = code.includes('.') ? code.split('.').pop() : code;
+        return raw.replace(/([A-Z])/g, ' $1').trim();
+    };
 
-        const getEnName = (code) => {
-            const raw = code.includes('.') ? code.split('.').pop() : code;
-            return raw.replace(/([A-Z])/g, ' $1').trim();
-        };
+    const createStationIcon = (collected, zoom) => {
+        const base = 10;
+        const size = Math.max(base, Math.round(base * Math.pow(1.22, zoom - 12)));
+        const inner = Math.round(size * 0.45);
 
-        const setLanguage = (lang) => {
-            currentLang = lang;
-            localStorage.setItem('eki_lang', lang);
-            markers.forEach(m => {
-                if (!m._stationData) return;
-                const s = m._stationData;
-                const lineDisplay = s.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim();
-                const name = getDisplayName(s, s.code);
-                m.setPopupContent(`<strong>${name}</strong><br><span style="font-size:12px;">Lines: ${lineDisplay}</span>`);
-                m.stationName = name;
-            });
-        };
+        const html = collected
+            ? `<div class="stamp-marker collected" style="width:${size}px;height:${size}px;">
+                 <svg width="${inner}" height="${inner}" viewBox="0 0 12 12">
+                   <path d="M2 6.5l3 3 5-5" stroke="#1a1a22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                 </svg>
+               </div>`
+            : `<div class="stamp-marker uncollected" style="width:${size}px;height:${size}px;">
+                 <svg width="${inner}" height="${inner}" viewBox="0 0 12 12">
+                   <circle cx="6" cy="6" r="2.5" fill="#5a5a6a"/>
+                 </svg>
+               </div>`;
 
-        const getLanguage = () => currentLang;
+        return L.divIcon({ html, className: '', iconSize: [size, size], iconAnchor: [size/2, size/2] });
+    };
 
-        const createMarker = (station, map) => {
-            const code = station.code;
-            if (!code || !station.line_code) return;
+    const buildPopupHtml = (marker) => {
+        const s = marker._stationData;
+        const code = s.code;
+        const jpName = s.name_kanji || '';
+        const enName = getEnName(code);
+        const lineColor = lineColorMap[s.line_code] || '#6b6b7a';
+        const lineLabel = s.line_code.replace(/\./g, ' › ');
+        const collected = marker._isCollected;
 
-            // FIX: key by station code (matches what click handler writes)
-            const isCollected = localStorage.getItem(code) === 'true';
-            const marker = L.marker([station.lat, station.lon], { icon: createStationIcon(isCollected, map.getZoom()) });
+        return `<div class="popup-inner">
+            <div class="popup-name">${jpName || enName}</div>
+            <div class="popup-name-en">${enName}</div>
+            <div class="popup-line">
+                <span class="popup-line-dot" style="background:${lineColor}"></span>
+                ${lineLabel}
+            </div>
+            <div class="popup-status ${collected ? 'stamped' : 'unstamped'}">
+                <span class="popup-status-icon">${collected ? '🔖' : '○'}</span>
+                ${collected ? 'Stamp collected' : 'Not yet collected'}
+            </div>
+        </div>`;
+    };
 
-            marker._stationData = station;
-            marker._isCollected = isCollected;
-            marker.stationName = getDisplayName(station, code);
-            marker.stationNameKanji = station.name_kanji || '';
-            marker.stationNameEn = getEnName(code);
+    const createMarker = (station, map) => {
+        const code = station.code;
+        if (!code || !station.line_code) return;
 
-            const lineDisplay = station.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim();
-            marker.bindPopup(`<strong>${marker.stationName}</strong><br><span style="font-size:12px;">Lines: ${lineDisplay}</span>`, { offset: L.point(0, -10) });
-            marker.on('mouseover', () => marker.openPopup());
-            marker.on('mouseout', () => marker.closePopup());
-            marker.on('click', () => {
-                // FIX: read from marker._isCollected, not stale closure
-                const next = !marker._isCollected;
-                marker._isCollected = next;
-                localStorage.setItem(code, next ? 'true' : 'false');
-                marker.setIcon(createStationIcon(next, map.getZoom()));
-            });
+        const collected = isCollected(code);
+        const marker = L.marker([station.lat, station.lon], {
+            icon: createStationIcon(collected, map.getZoom())
+        });
 
-            markers.push(marker);
-            marker.addTo(map);
-        };
+        marker._stationData = station;
+        marker._isCollected = collected;
+        marker.stationName = getDisplayName(station, code);
+        marker.stationNameKanji = station.name_kanji || '';
+        marker.stationNameEn = getEnName(code);
 
-        const loadMarkersInView = (map) => {
-            const bounds = map.getBounds();
-            let shown = 0;
-            markers.forEach(m => {
-                if (bounds.contains(m.getLatLng())) {
-                    if (!map.hasLayer(m) && shown < 300) { m.addTo(map); shown++; }
-                } else {
-                    if (map.hasLayer(m)) map.removeLayer(m);
+        marker.bindPopup(buildPopupHtml(marker), {
+            offset: L.point(0, -4),
+            closeButton: false,
+            maxWidth: 240
+        });
+        marker.on('mouseover', () => marker.openPopup());
+        marker.on('mouseout', () => marker.closePopup());
+
+        marker.on('click', () => {
+            const next = !marker._isCollected;
+            marker._isCollected = next;
+            setCollected(code, next);
+
+            // Animate: briefly add pulse class
+            const el = marker.getElement();
+            if (el) {
+                const stampEl = el.querySelector('.stamp-marker');
+                if (stampEl) {
+                    stampEl.classList.remove('pulse');
+                    void stampEl.offsetWidth; // reflow
+                    stampEl.classList.add('pulse');
                 }
-            });
-        };
+            }
 
-        const updateMarkerSizes = (map) => {
-            const zoom = map.getZoom();
-            // FIX: use marker._isCollected, not a stale localStorage read keyed by display name
-            markers.forEach(m => m.setIcon(createStationIcon(m._isCollected, zoom)));
-        };
-
-        const fetchStations = (map) => {
-            const load = (stations, excluded) => {
-                stations.forEach(g => g.stations.forEach(s => {
-                    if (!excluded.includes(s.line_code)) createMarker(s, map);
-                }));
-                loadMarkersInView(map);
-                map.on('moveend', () => loadMarkersInView(map));
-                map.on('zoomend', () => updateMarkerSizes(map));
-            };
-
-            // FEATURE: sessionStorage cache
-            try {
-                const cs = sessionStorage.getItem('eki_stations');
-                const ts = sessionStorage.getItem('eki_stations_ts');
-                const ce = sessionStorage.getItem('eki_excluded');
-                if (cs && ts && ce && Date.now() - Number(ts) < CACHE_TTL) {
-                    load(JSON.parse(cs), JSON.parse(ce)); return;
-                }
-            } catch(e) {}
-
-            Promise.all([
-                fetch('data/stations.json').then(r => r.json()),
-                fetch('data/no-stamps-lines.json').then(r => r.json()).then(d => d.map(l => l.line_code))
-            ]).then(([stations, excluded]) => {
-                try {
-                    sessionStorage.setItem('eki_stations', JSON.stringify(stations));
-                    sessionStorage.setItem('eki_stations_ts', String(Date.now()));
-                    sessionStorage.setItem('eki_excluded', JSON.stringify(excluded));
-                } catch(e) {}
-                load(stations, excluded);
-            }).catch(err => {
-                console.error('Error fetching stations:', err);
-                alert('Failed to load stations data. Please try again later.');
-            });
-        };
-
-        // ── Search ────────────────────────────────────────────────────────────
-
-        const setupSearch = (map) => {
-            const input = document.getElementById('stationSearch');
-            const suggestions = document.getElementById('suggestions');
-
-            input.addEventListener('keyup', () => {
-                const term = input.value.toLowerCase().trim();
-                suggestions.innerHTML = '';
-                suggestions.style.display = 'none';
-                if (!term) return;
-
-                // FIX: search stored name properties, not stripped popup HTML
-                const hits = markers.filter(m =>
-                    (m.stationNameEn || '').toLowerCase().includes(term) ||
-                    (m.stationNameKanji || '').toLowerCase().includes(term) ||
-                    (m.stationName || '').toLowerCase().includes(term)
-                ).slice(0, 5);
-
-                if (!hits.length) return;
-                suggestions.style.display = 'block';
-                hits.forEach(m => {
-                    const item = document.createElement('div');
-                    item.textContent = m.stationNameKanji && m.stationNameEn && m.stationNameKanji !== m.stationNameEn
-                        ? `${m.stationNameKanji} (${m.stationNameEn})`
-                        : m.stationName;
-                    item.onclick = () => {
-                        map.setView(m.getLatLng(), 15);
-                        m.setOpacity(0.5);
-                        setTimeout(() => m.setOpacity(1), 1000);
-                        suggestions.innerHTML = '';
-                        suggestions.style.display = 'none';
-                        input.value = '';
-                    };
-                    suggestions.appendChild(item);
-                });
-            });
-
-            document.addEventListener('click', e => {
-                if (!e.target.closest('#search-container')) suggestions.style.display = 'none';
-            });
-        };
-
-        // ── Language toggle ───────────────────────────────────────────────────
-
-        const setupLanguageToggle = () => {
-            const btn = document.getElementById('lang-toggle');
-            btn.textContent = getLanguage() === 'jp' ? 'EN' : 'JP';
-            btn.addEventListener('click', () => {
-                const next = getLanguage() === 'en' ? 'jp' : 'en';
-                setLanguage(next);
-                btn.textContent = next === 'jp' ? 'EN' : 'JP';
-            });
-        };
-
-        // ── Session panel ─────────────────────────────────────────────────────
-
-        const setupSessionPanel = () => {
-            const statsEl = document.getElementById('session-stats');
-            const isStampKey = k => k.includes('.');
-
-            const updateStats = () => {
-                const all = Object.keys(localStorage).filter(isStampKey);
-                const done = all.filter(k => localStorage.getItem(k) === 'true').length;
-                if (statsEl) statsEl.textContent = `${done} / ${all.length} collected`;
-            };
+            marker.setIcon(createStationIcon(next, map.getZoom()));
+            marker.setPopupContent(buildPopupHtml(marker));
             updateStats();
 
-            document.getElementById('session-export').addEventListener('click', () => {
-                const session = {};
-                Object.keys(localStorage).filter(isStampKey).forEach(k => {
-                    if (localStorage.getItem(k) === 'true') session[k] = true;
-                });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' }));
-                a.download = `eki-stamps-${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-            });
+            showToast(next
+                ? `🔖 ${marker.stationName} — stamped!`
+                : `${marker.stationName} — removed`
+            );
+        });
 
-            const fileInput = document.getElementById('session-import-file');
-            document.getElementById('session-import').addEventListener('click', () => fileInput.click());
-            fileInput.addEventListener('change', e => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = ev => {
-                    try {
-                        const s = JSON.parse(ev.target.result);
-                        Object.keys(s).forEach(k => { if (s[k] === true) localStorage.setItem(k, 'true'); });
-                        updateStats();
-                        alert('Session imported. Reload the page to see updated stamps.');
-                    } catch { alert('Invalid session file.'); }
-                };
-                reader.readAsText(file);
-                fileInput.value = '';
-            });
+        markers.push(marker);
+        marker.addTo(map);
+    };
 
-            document.getElementById('session-reset').addEventListener('click', () => {
-                if (!confirm('Reset all collected stamps? This cannot be undone.')) return;
-                Object.keys(localStorage).filter(isStampKey).forEach(k => localStorage.removeItem(k));
-                updateStats();
-                location.reload();
-            });
+    const loadMarkersInView = (map) => {
+        const bounds = map.getBounds();
+        let shown = 0;
+        markers.forEach(m => {
+            if (bounds.contains(m.getLatLng())) {
+                if (!map.hasLayer(m) && shown < 400) { m.addTo(map); shown++; }
+            } else {
+                if (map.hasLayer(m)) map.removeLayer(m);
+            }
+        });
+    };
 
-            document.getElementById('session-toggle').addEventListener('click', () => {
-                document.getElementById('session-panel').classList.toggle('hidden');
-            });
+    const updateMarkerSizes = (map) => {
+        const zoom = map.getZoom();
+        markers.forEach(m => m.setIcon(createStationIcon(m._isCollected, zoom)));
+    };
+
+    const refreshAllMarkerStates = (map) => {
+        markers.forEach(m => {
+            const code = m._stationData.code;
+            m._isCollected = isCollected(code);
+            m.setIcon(createStationIcon(m._isCollected, map.getZoom()));
+            m.setPopupContent(buildPopupHtml(m));
+        });
+        updateStats();
+    };
+
+    const fetchStations = (map) => {
+        const load = (stations, excluded) => {
+            stations.forEach(g => g.stations.forEach(s => {
+                if (!excluded.includes(s.line_code)) createMarker(s, map);
+            }));
+            loadMarkersInView(map);
+            map.on('moveend', () => loadMarkersInView(map));
+            map.on('zoomend', () => updateMarkerSizes(map));
+            updateStats();
         };
 
-        // ── Init ──────────────────────────────────────────────────────────────
+        try {
+            const cs = sessionStorage.getItem('eki_stations');
+            const ts = sessionStorage.getItem('eki_stations_ts');
+            const ce = sessionStorage.getItem('eki_excluded');
+            if (cs && ts && ce && Date.now() - Number(ts) < CACHE_TTL) {
+                load(JSON.parse(cs), JSON.parse(ce)); return;
+            }
+        } catch(e) {}
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const map = initializeMap();
-            fetchStations(map);
-            setupSearch(map);
-            addTrainLinesToMap(map);
-            setupLanguageToggle();
-            setupSessionPanel();
+        Promise.all([
+            fetch('data/stations.json').then(r => r.json()),
+            fetch('data/no-stamps-lines.json').then(r => r.json()).then(d => d.map(l => l.line_code))
+        ]).then(([stations, excluded]) => {
+            try {
+                sessionStorage.setItem('eki_stations', JSON.stringify(stations));
+                sessionStorage.setItem('eki_stations_ts', String(Date.now()));
+                sessionStorage.setItem('eki_excluded', JSON.stringify(excluded));
+            } catch(e) {}
+            load(stations, excluded);
+        }).catch(err => {
+            console.error('Error fetching stations:', err);
+            alert('Failed to load stations data. Please try again later.');
         });
+    };
+
+    // ── Language toggle ───────────────────────────────────────────────────────
+    const setupLanguageToggle = (map) => {
+        const btn = document.getElementById('lang-toggle');
+        btn.textContent = currentLang === 'jp' ? 'EN' : 'JP';
+        btn.addEventListener('click', () => {
+            currentLang = currentLang === 'en' ? 'jp' : 'en';
+            localStorage.setItem('eki_lang', currentLang);
+            btn.textContent = currentLang === 'jp' ? 'EN' : 'JP';
+            markers.forEach(m => {
+                if (!m._stationData) return;
+                m.stationName = getDisplayName(m._stationData, m._stationData.code);
+                m.setPopupContent(buildPopupHtml(m));
+            });
+        });
+    };
+
+    // ── Search ────────────────────────────────────────────────────────────────
+    const setupSearch = (map) => {
+        const input = document.getElementById('stationSearch');
+        const suggestions = document.getElementById('suggestions');
+
+        input.addEventListener('input', () => {
+            const term = input.value.toLowerCase().trim();
+            suggestions.innerHTML = '';
+            suggestions.style.display = 'none';
+            if (!term) return;
+
+            const hits = markers.filter(m =>
+                (m.stationNameEn || '').toLowerCase().includes(term) ||
+                (m.stationNameKanji || '').toLowerCase().includes(term)
+            ).slice(0, 6);
+
+            if (!hits.length) return;
+            suggestions.style.display = 'block';
+            hits.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'suggestion-item';
+
+                const nameWrap = document.createElement('div');
+                nameWrap.innerHTML = `<div class="jp">${m.stationNameKanji || m.stationNameEn}</div><div class="en">${m.stationNameEn}</div>`;
+
+                item.appendChild(nameWrap);
+
+                if (m._isCollected) {
+                    const badge = document.createElement('span');
+                    badge.className = 'collected-badge';
+                    badge.textContent = '🔖';
+                    item.appendChild(badge);
+                }
+
+                item.onclick = () => {
+                    map.setView(m.getLatLng(), 15);
+                    setTimeout(() => m.openPopup(), 300);
+                    suggestions.style.display = 'none';
+                    input.value = '';
+                };
+                suggestions.appendChild(item);
+            });
+        });
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('#search-container')) suggestions.style.display = 'none';
+        });
+    };
+
+    // ── Session panel ─────────────────────────────────────────────────────────
+    const updateSessionUI = () => {
+        const avatarEl = document.getElementById('session-avatar');
+        const nameEl = document.getElementById('session-username');
+        const inputEl = document.getElementById('session-name-input');
+
+        if (currentUser) {
+            avatarEl.textContent = currentUser.charAt(0).toUpperCase();
+            nameEl.textContent = currentUser;
+            nameEl.classList.remove('placeholder');
+            if (inputEl) inputEl.value = currentUser;
+        } else {
+            avatarEl.textContent = '?';
+            nameEl.textContent = 'No session';
+            nameEl.classList.add('placeholder');
+        }
+        updateStats();
+    };
+
+    const setupSessionPanel = (map) => {
+        // Toggle panel
+        document.getElementById('session-toggle').addEventListener('click', () => {
+            const panel = document.getElementById('session-panel');
+            const btn = document.getElementById('session-toggle');
+            panel.classList.toggle('hidden');
+            btn.classList.toggle('active');
+        });
+
+        updateSessionUI();
+
+        // Load session by name
+        document.getElementById('session-load').addEventListener('click', () => {
+            const name = document.getElementById('session-name-input').value.trim();
+            if (!name) { showToast('Enter a name first'); return; }
+            currentUser = name;
+            localStorage.setItem('eki_current_user', name);
+            updateSessionUI();
+            refreshAllMarkerStates(map);
+            showToast(`Session loaded: ${name}`);
+        });
+
+        // Save (just persists current user name + confirms stamps are in localStorage)
+        document.getElementById('session-save').addEventListener('click', () => {
+            if (!currentUser) { showToast('Load a session first'); return; }
+            showToast(`✓ Saved as ${currentUser}`);
+        });
+
+        // Export JSON
+        document.getElementById('session-export').addEventListener('click', () => {
+            const session = { user: currentUser, stamps: {} };
+            getStampKeys(currentUser).forEach(k => {
+                const code = currentUser ? k.replace(currentUser + ':', '') : k;
+                if (localStorage.getItem(k) === 'true') session.stamps[code] = true;
+            });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' }));
+            a.download = `eki-${currentUser || 'stamps'}-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+        });
+
+        // Reset
+        document.getElementById('session-reset').addEventListener('click', () => {
+            const who = currentUser || 'all stamps';
+            if (!confirm(`Reset all stamps for "${who}"? This cannot be undone.`)) return;
+            getStampKeys(currentUser).forEach(k => localStorage.removeItem(k));
+            refreshAllMarkerStates(map);
+            showToast('All stamps reset');
+        });
+    };
+
+    // ── Name modal ────────────────────────────────────────────────────────────
+    const setupNameModal = (map) => {
+        const overlay = document.getElementById('name-modal-overlay');
+        const input = document.getElementById('modal-name-input');
+
+        // Show on first visit if no user set
+        if (!currentUser) {
+            overlay.classList.remove('hidden');
+            setTimeout(() => input.focus(), 100);
+        }
+
+        const confirm = () => {
+            const name = input.value.trim();
+            if (name) {
+                currentUser = name;
+                localStorage.setItem('eki_current_user', name);
+                updateSessionUI();
+                refreshAllMarkerStates(map);
+                showToast(`Welcome, ${name}! 🔖`);
+            }
+            overlay.classList.add('hidden');
+        };
+
+        document.getElementById('modal-confirm').addEventListener('click', confirm);
+        document.getElementById('modal-skip').addEventListener('click', () => overlay.classList.add('hidden'));
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') confirm(); });
+    };
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        const map = initializeMap();
+        fetchStations(map);
+        setupSearch(map);
+        addTrainLinesToMap(map);
+        setupLanguageToggle(map);
+        setupSessionPanel(map);
+        setupNameModal(map);
+    });
     </script>
 </body>
 </html>
