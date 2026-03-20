@@ -3,22 +3,248 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tracker Selection</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <title>salouden • trackers</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:        #0d0d0f;
+            --surface:   #141418;
+            --border:    #2a2a32;
+            --text:      #e8e8ec;
+            --muted:     #6b6b7a;
+            --accent-a:  #4f8ef7;  /* blue — trains */
+            --accent-b:  #f7934f;  /* amber — stamps */
+            --glow-a:    rgba(79, 142, 247, 0.15);
+            --glow-b:    rgba(247, 147, 79, 0.15);
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Space Mono', monospace;
+            overflow: hidden;
+        }
+
+        /* Subtle noise grain overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Grid lines background */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(var(--border) 1px, transparent 1px),
+                linear-gradient(90deg, var(--border) 1px, transparent 1px);
+            background-size: 48px 48px;
+            opacity: 0.3;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .page {
+            position: relative;
+            z-index: 1;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            gap: 3rem;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            animation: fadeUp 0.6s ease both;
+        }
+
+        .eyebrow {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 0.75rem;
+        }
+
+        h1 {
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            font-weight: 700;
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            line-height: 1;
+            letter-spacing: -0.02em;
+            color: var(--text);
+        }
+
+        h1 span {
+            display: block;
+            font-size: 0.35em;
+            font-weight: 400;
+            color: var(--muted);
+            letter-spacing: 0.1em;
+            margin-top: 0.5rem;
+            font-family: 'Space Mono', monospace;
+        }
+
+        /* Cards */
+        .cards {
+            display: flex;
+            gap: 1.5rem;
+            animation: fadeUp 0.6s 0.15s ease both;
+        }
+
+        .card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            width: 240px;
+            padding: 1.75rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            text-decoration: none;
+            color: var(--text);
+            overflow: hidden;
+            transition: border-color 0.2s, transform 0.2s;
+            cursor: pointer;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        .card-a::before { background: radial-gradient(circle at 50% 0%, var(--glow-a), transparent 70%); }
+        .card-b::before { background: radial-gradient(circle at 50% 0%, var(--glow-b), transparent 70%); }
+
+        .card:hover { transform: translateY(-4px); }
+        .card-a:hover { border-color: var(--accent-a); }
+        .card-b:hover { border-color: var(--accent-b); }
+        .card:hover::before { opacity: 1; }
+
+        .card-icon {
+            font-size: 1.75rem;
+            margin-bottom: 1.25rem;
+            line-height: 1;
+        }
+
+        .card-title {
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+        }
+
+        .card-desc {
+            font-size: 0.7rem;
+            color: var(--muted);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-cta {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            transition: gap 0.2s;
+        }
+
+        .card-a .card-cta { color: var(--accent-a); }
+        .card-b .card-cta { color: var(--accent-b); }
+        .card:hover .card-cta { gap: 0.7rem; }
+
+        .card-cta::after { content: '→'; }
+
+        /* Corner accent */
+        .card-corner {
+            position: absolute;
+            top: 0; right: 0;
+            width: 40px; height: 40px;
+            overflow: hidden;
+        }
+        .card-corner::after {
+            content: '';
+            position: absolute;
+            top: -1px; right: -1px;
+            width: 0; height: 0;
+            border-style: solid;
+        }
+        .card-a .card-corner::after { border-width: 0 32px 32px 0; border-color: transparent var(--accent-a) transparent transparent; }
+        .card-b .card-corner::after { border-width: 0 32px 32px 0; border-color: transparent var(--accent-b) transparent transparent; }
+
+        /* Footer */
+        footer {
+            font-size: 0.65rem;
+            color: var(--muted);
+            letter-spacing: 0.1em;
+            animation: fadeUp 0.6s 0.3s ease both;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 540px) {
+            .cards { flex-direction: column; }
+            .card { width: 100%; max-width: 320px; }
+        }
+    </style>
 </head>
-<body class="container center-align">
-    <h1>I like trains</h1> <br/>
-    
-    <div class="button-container">
-        <a href="/eki_stamp_book/index.html" class="waves-effect waves-light btn-large blue">
-            <i class="material-icons left">place</i>Eki Stamp Tracker
-        </a>
-        <a href="/railway_ride_tracker/index.html" class="waves-effect waves-light btn-large green">
-            <i class="material-icons left">train</i>Railway Ride Tracker
-        </a>
+<body>
+    <div class="page">
+        <header>
+            <p class="eyebrow">salouden.github.io</p>
+            <h1>
+                鉄道
+                <span>railway trackers</span>
+            </h1>
+        </header>
+
+        <div class="cards">
+            <a href="/eki_stamp_tracker_output/index.html" class="card card-b">
+                <div class="card-corner"></div>
+                <div>
+                    <div class="card-icon">🔖</div>
+                    <div class="card-title">Eki Stamp Tracker</div>
+                    <div class="card-desc">Collect and track station stamps across Japan's railway network.</div>
+                </div>
+                <div class="card-cta">Open tracker</div>
+            </a>
+
+            <a href="/railway_ride_tracker/index.html" class="card card-a">
+                <div class="card-corner"></div>
+                <div>
+                    <div class="card-icon">🚄</div>
+                    <div class="card-title">Railway Ride Tracker</div>
+                    <div class="card-desc">Log every line you've ridden across Japan's rail network.</div>
+                </div>
+                <div class="card-cta">Open tracker</div>
+            </a>
+        </div>
+
+        <footer>no password required · just trains</footer>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 </body>
 </html>
