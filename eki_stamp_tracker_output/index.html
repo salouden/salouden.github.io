@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eki Stamp Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; }
+
+        #map { height: 100%; width: 100%; }
+
+        #search-container { position: absolute; top: 20px; right: 20px; z-index: 1000; }
+
+        #stationSearch {
+            padding: 10px; font-size: 14px; width: 250px;
+            border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+        }
+
+        /* FIX: top: 100% so dropdown sits directly below input */
+        #suggestions {
+            position: absolute; top: 100%; right: 0; width: 250px;
+            background: white; border: 1px solid #ccc; border-radius: 4px;
+            z-index: 1001; display: none; box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        #suggestions div { padding: 10px; cursor: pointer; font-size: 13px; }
+        #suggestions div:hover { background: #f0f0f0; }
+
+        #controls {
+            position: absolute; top: 70px; right: 20px;
+            z-index: 1000; display: flex; gap: 8px;
+        }
+        #controls button {
+            padding: 8px 14px; font-size: 13px; font-weight: 600;
+            background: white; border: 1px solid #ccc; border-radius: 4px;
+            cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        #controls button:hover { background: #f5f5f5; }
+
+        #session-panel {
+            position: absolute; top: 110px; right: 20px; z-index: 1000;
+            background: white; border: 1px solid #ccc; border-radius: 6px;
+            padding: 16px; width: 220px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        #session-panel h3 { margin: 0 0 8px; font-size: 14px; }
+        #session-stats { font-size: 13px; color: #555; margin: 0 0 12px; }
+
+        .session-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+        .session-buttons button {
+            flex: 1; padding: 7px 8px; font-size: 12px;
+            border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white;
+        }
+        .session-buttons button:hover { background: #f5f5f5; }
+        .session-buttons button.danger { color: #c0392b; border-color: #c0392b; }
+        .session-buttons button.danger:hover { background: #fdf2f2; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="search-container">
+        <input type="text" id="stationSearch" placeholder="Search for a station..." />
+        <div id="suggestions"></div>
+    </div>
+
+    <div id="controls">
+        <button id="lang-toggle" title="Toggle Japanese/English station names">JP</button>
+        <button id="session-toggle" title="Stamp collection session">Session</button>
+    </div>
+
+    <div id="session-panel" class="hidden">
+        <h3>Stamp Collection</h3>
+        <p id="session-stats">0 / 0 collected</p>
+        <div class="session-buttons">
+            <button id="session-export">Export</button>
+            <button id="session-import">Import</button>
+            <button id="session-reset" class="danger">Reset</button>
+        </div>
+        <input type="file" id="session-import-file" accept=".json" style="display:none">
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        // ── Utils ─────────────────────────────────────────────────────────────
+
+        const createStationIcon = (isCollected, zoom) => {
+            // FIX: min 8px so icons never become unclickably small
+            const iconSize = Math.max(8, 16 * Math.pow(1.2, zoom - 12));
+            // FIX: relative paths (absolute /img/... breaks on non-root deployments)
+            return L.divIcon({
+                html: `<div style="text-align:center;"><img src="${isCollected ? 'img/full-radio.png' : 'img/empty-radio.png'}" width="${iconSize}" height="${iconSize}"></div>`,
+                iconAnchor: [iconSize / 2, iconSize],
+                className: '',
+                iconSize: [iconSize, iconSize]
+            });
+        };
+
+        // ── Map ───────────────────────────────────────────────────────────────
+
+        const initializeMap = () => {
+            const map = L.map('map').setView([35.682839, 139.759455], 13);
+            L.tileLayer('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            }).addTo(map);
+            return map;
+        };
+
+        // ── Lines ─────────────────────────────────────────────────────────────
+
+        // FIX: stable color via hash of line name, not array index (index shifts if data order changes)
+        const hashLineName = (name) => {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+            return hash;
+        };
+
+        const CACHE_TTL = 24 * 60 * 60 * 1000;
+
+        const renderLines = (map, data) => {
+            const palette = [
+                '#FF4500','#FF6F00','#FFA500','#FFC300','#FFD700','#FFF700','#D4FF00','#A8FF00','#7FFF00','#50FF00',
+                '#00FF50','#00FF87','#00FFB2','#00FFD4','#00FFEB','#00E5FF','#00CFFF','#00AFFF','#0087FF','#005FFF',
+                '#003AFF','#2A00FF','#5400FF','#7500FF','#9A00FF','#BF00FF','#DF00FF','#FF00E0','#FF00B2','#FF0087'
+            ];
+            const colorMap = {};
+            data.features.forEach(feature => {
+                const name = feature.properties.路線名;
+                if (!colorMap[name]) colorMap[name] = palette[hashLineName(name) % palette.length];
+                const polyline = L.polyline(
+                    feature.geometry.coordinates.map(c => [c[1], c[0]]),
+                    { color: colorMap[name], weight: 2, opacity: 0.8 }
+                ).addTo(map);
+                polyline.bindPopup(`<strong>${name}</strong>`);
+                polyline.on('mouseover', () => polyline.openPopup());
+                polyline.on('mouseout', () => polyline.closePopup());
+            });
+        };
+
+        const addTrainLinesToMap = (map) => {
+            // FEATURE: sessionStorage cache to skip re-fetch on reload
+            try {
+                const cached = sessionStorage.getItem('eki_lines');
+                const ts = sessionStorage.getItem('eki_lines_ts');
+                if (cached && ts && Date.now() - Number(ts) < CACHE_TTL) {
+                    renderLines(map, JSON.parse(cached)); return;
+                }
+            } catch(e) {}
+            fetch('data/railroad-section.geojson').then(r => r.json()).then(data => {
+                try { sessionStorage.setItem('eki_lines', JSON.stringify(data)); sessionStorage.setItem('eki_lines_ts', String(Date.now())); } catch(e) {}
+                renderLines(map, data);
+            }).catch(err => console.error('Error loading train lines:', err));
+        };
+
+        // ── Markers ───────────────────────────────────────────────────────────
+
+        const markers = [];
+        let currentLang = localStorage.getItem('eki_lang') || 'en';
+
+        const getDisplayName = (station, code) => {
+            if (currentLang === 'jp' && station.name_kanji) return station.name_kanji;
+            const raw = code.includes('.') ? code.split('.').pop() : code;
+            return raw.replace(/([A-Z])/g, ' $1').trim() || station.name_kanji || code;
+        };
+
+        const getEnName = (code) => {
+            const raw = code.includes('.') ? code.split('.').pop() : code;
+            return raw.replace(/([A-Z])/g, ' $1').trim();
+        };
+
+        const setLanguage = (lang) => {
+            currentLang = lang;
+            localStorage.setItem('eki_lang', lang);
+            markers.forEach(m => {
+                if (!m._stationData) return;
+                const s = m._stationData;
+                const lineDisplay = s.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                const name = getDisplayName(s, s.code);
+                m.setPopupContent(`<strong>${name}</strong><br><span style="font-size:12px;">Lines: ${lineDisplay}</span>`);
+                m.stationName = name;
+            });
+        };
+
+        const getLanguage = () => currentLang;
+
+        const createMarker = (station, map) => {
+            const code = station.code;
+            if (!code || !station.line_code) return;
+
+            // FIX: key by station code (matches what click handler writes)
+            const isCollected = localStorage.getItem(code) === 'true';
+            const marker = L.marker([station.lat, station.lon], { icon: createStationIcon(isCollected, map.getZoom()) });
+
+            marker._stationData = station;
+            marker._isCollected = isCollected;
+            marker.stationName = getDisplayName(station, code);
+            marker.stationNameKanji = station.name_kanji || '';
+            marker.stationNameEn = getEnName(code);
+
+            const lineDisplay = station.line_code.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim();
+            marker.bindPopup(`<strong>${marker.stationName}</strong><br><span style="font-size:12px;">Lines: ${lineDisplay}</span>`, { offset: L.point(0, -10) });
+            marker.on('mouseover', () => marker.openPopup());
+            marker.on('mouseout', () => marker.closePopup());
+            marker.on('click', () => {
+                // FIX: read from marker._isCollected, not stale closure
+                const next = !marker._isCollected;
+                marker._isCollected = next;
+                localStorage.setItem(code, next ? 'true' : 'false');
+                marker.setIcon(createStationIcon(next, map.getZoom()));
+            });
+
+            markers.push(marker);
+            marker.addTo(map);
+        };
+
+        const loadMarkersInView = (map) => {
+            const bounds = map.getBounds();
+            let shown = 0;
+            markers.forEach(m => {
+                if (bounds.contains(m.getLatLng())) {
+                    if (!map.hasLayer(m) && shown < 300) { m.addTo(map); shown++; }
+                } else {
+                    if (map.hasLayer(m)) map.removeLayer(m);
+                }
+            });
+        };
+
+        const updateMarkerSizes = (map) => {
+            const zoom = map.getZoom();
+            // FIX: use marker._isCollected, not a stale localStorage read keyed by display name
+            markers.forEach(m => m.setIcon(createStationIcon(m._isCollected, zoom)));
+        };
+
+        const fetchStations = (map) => {
+            const load = (stations, excluded) => {
+                stations.forEach(g => g.stations.forEach(s => {
+                    if (!excluded.includes(s.line_code)) createMarker(s, map);
+                }));
+                loadMarkersInView(map);
+                map.on('moveend', () => loadMarkersInView(map));
+                map.on('zoomend', () => updateMarkerSizes(map));
+            };
+
+            // FEATURE: sessionStorage cache
+            try {
+                const cs = sessionStorage.getItem('eki_stations');
+                const ts = sessionStorage.getItem('eki_stations_ts');
+                const ce = sessionStorage.getItem('eki_excluded');
+                if (cs && ts && ce && Date.now() - Number(ts) < CACHE_TTL) {
+                    load(JSON.parse(cs), JSON.parse(ce)); return;
+                }
+            } catch(e) {}
+
+            Promise.all([
+                fetch('data/stations.json').then(r => r.json()),
+                fetch('data/no-stamps-lines.json').then(r => r.json()).then(d => d.map(l => l.line_code))
+            ]).then(([stations, excluded]) => {
+                try {
+                    sessionStorage.setItem('eki_stations', JSON.stringify(stations));
+                    sessionStorage.setItem('eki_stations_ts', String(Date.now()));
+                    sessionStorage.setItem('eki_excluded', JSON.stringify(excluded));
+                } catch(e) {}
+                load(stations, excluded);
+            }).catch(err => {
+                console.error('Error fetching stations:', err);
+                alert('Failed to load stations data. Please try again later.');
+            });
+        };
+
+        // ── Search ────────────────────────────────────────────────────────────
+
+        const setupSearch = (map) => {
+            const input = document.getElementById('stationSearch');
+            const suggestions = document.getElementById('suggestions');
+
+            input.addEventListener('keyup', () => {
+                const term = input.value.toLowerCase().trim();
+                suggestions.innerHTML = '';
+                suggestions.style.display = 'none';
+                if (!term) return;
+
+                // FIX: search stored name properties, not stripped popup HTML
+                const hits = markers.filter(m =>
+                    (m.stationNameEn || '').toLowerCase().includes(term) ||
+                    (m.stationNameKanji || '').toLowerCase().includes(term) ||
+                    (m.stationName || '').toLowerCase().includes(term)
+                ).slice(0, 5);
+
+                if (!hits.length) return;
+                suggestions.style.display = 'block';
+                hits.forEach(m => {
+                    const item = document.createElement('div');
+                    item.textContent = m.stationNameKanji && m.stationNameEn && m.stationNameKanji !== m.stationNameEn
+                        ? `${m.stationNameKanji} (${m.stationNameEn})`
+                        : m.stationName;
+                    item.onclick = () => {
+                        map.setView(m.getLatLng(), 15);
+                        m.setOpacity(0.5);
+                        setTimeout(() => m.setOpacity(1), 1000);
+                        suggestions.innerHTML = '';
+                        suggestions.style.display = 'none';
+                        input.value = '';
+                    };
+                    suggestions.appendChild(item);
+                });
+            });
+
+            document.addEventListener('click', e => {
+                if (!e.target.closest('#search-container')) suggestions.style.display = 'none';
+            });
+        };
+
+        // ── Language toggle ───────────────────────────────────────────────────
+
+        const setupLanguageToggle = () => {
+            const btn = document.getElementById('lang-toggle');
+            btn.textContent = getLanguage() === 'jp' ? 'EN' : 'JP';
+            btn.addEventListener('click', () => {
+                const next = getLanguage() === 'en' ? 'jp' : 'en';
+                setLanguage(next);
+                btn.textContent = next === 'jp' ? 'EN' : 'JP';
+            });
+        };
+
+        // ── Session panel ─────────────────────────────────────────────────────
+
+        const setupSessionPanel = () => {
+            const statsEl = document.getElementById('session-stats');
+            const isStampKey = k => k.includes('.');
+
+            const updateStats = () => {
+                const all = Object.keys(localStorage).filter(isStampKey);
+                const done = all.filter(k => localStorage.getItem(k) === 'true').length;
+                if (statsEl) statsEl.textContent = `${done} / ${all.length} collected`;
+            };
+            updateStats();
+
+            document.getElementById('session-export').addEventListener('click', () => {
+                const session = {};
+                Object.keys(localStorage).filter(isStampKey).forEach(k => {
+                    if (localStorage.getItem(k) === 'true') session[k] = true;
+                });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' }));
+                a.download = `eki-stamps-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+            });
+
+            const fileInput = document.getElementById('session-import-file');
+            document.getElementById('session-import').addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    try {
+                        const s = JSON.parse(ev.target.result);
+                        Object.keys(s).forEach(k => { if (s[k] === true) localStorage.setItem(k, 'true'); });
+                        updateStats();
+                        alert('Session imported. Reload the page to see updated stamps.');
+                    } catch { alert('Invalid session file.'); }
+                };
+                reader.readAsText(file);
+                fileInput.value = '';
+            });
+
+            document.getElementById('session-reset').addEventListener('click', () => {
+                if (!confirm('Reset all collected stamps? This cannot be undone.')) return;
+                Object.keys(localStorage).filter(isStampKey).forEach(k => localStorage.removeItem(k));
+                updateStats();
+                location.reload();
+            });
+
+            document.getElementById('session-toggle').addEventListener('click', () => {
+                document.getElementById('session-panel').classList.toggle('hidden');
+            });
+        };
+
+        // ── Init ──────────────────────────────────────────────────────────────
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const map = initializeMap();
+            fetchStations(map);
+            setupSearch(map);
+            addTrainLinesToMap(map);
+            setupLanguageToggle();
+            setupSessionPanel();
+        });
+    </script>
+</body>
+</html>

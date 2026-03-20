@@ -1,0 +1,18 @@
+#Must have
+
+#Should have
+Cache the stations and railways loading
+Find a dataset of non-railway stamps > Add stamps for points of interest
+
+#Could have
+Add a JP/EN toggle > Implement station name change
+Change stations dataset to use the one harmonised with the lines geojson (JP only)?
+Implement sessions
+
+#Nice to have
+Host publicly
+Add ads - check licenses of stations datasets and lines datasets
+
+ 
+#Bugs
+- Icon size blocked too small after clicking on it -> can reproduce?
