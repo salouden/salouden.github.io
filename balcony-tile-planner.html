@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balcony Tile Planner</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;800&display=swap');
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e8e4dc;
+    --muted: #555;
+    --accent: #c8f54a;
+    --green: #4ade80;
+    --orange: #fb923c;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+  }
+
+  header span {
+    font-size: 0.62rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .layout { display: flex; flex: 1; min-height: 0; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 210px;
+    min-width: 210px;
+    border-right: 1px solid var(--border);
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  .section-title {
+    font-size: 0.55rem;
+    color: var(--muted);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  /* Budget bars */
+  .budget-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .budget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .budget-label {
+    font-size: 0.62rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  .budget-count {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .budget-count.green  { color: var(--green); }
+  .budget-count.orange { color: var(--orange); }
+  .budget-count.spent  { color: #444; }
+
+  .budget-bar-track {
+    height: 6px;
+    background: #1e1e1e;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .budget-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.2s ease;
+  }
+
+  .budget-bar-fill.green  { background: var(--green); }
+  .budget-bar-fill.orange { background: var(--orange); }
+
+  .budget-sub {
+    font-size: 0.58rem;
+    color: var(--muted);
+  }
+
+  /* Stats */
+  .stat-block { display: flex; flex-direction: column; gap: 3px; }
+
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .stat-sub { font-size: 0.58rem; color: var(--muted); }
+
+  .divider { height: 1px; background: var(--border); flex-shrink: 0; }
+
+  /* Legend */
+  .legend { display: flex; flex-direction: column; gap: 6px; }
+
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.6rem; color: var(--muted);
+  }
+
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  /* Buttons */
+  .btn-group { display: flex; flex-direction: column; gap: 7px; margin-top: auto; }
+
+  button {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.63rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: all 0.12s;
+  }
+
+  .btn-undo { background: transparent; color: var(--text); }
+  .btn-undo:hover { background: var(--surface); border-color: var(--muted); }
+
+  .btn-reset { background: transparent; color: var(--orange); border-color: rgba(251,146,60,0.3); }
+  .btn-reset:hover { background: rgba(251,146,60,0.08); border-color: var(--orange); }
+
+  /* Canvas */
+  .canvas-wrap { flex: 1; overflow: auto; padding: 24px; }
+  canvas { display: block; cursor: crosshair; }
+
+  .hint { font-size: 0.56rem; color: var(--muted); line-height: 1.8; }
+
+  /* Warning flash */
+  @keyframes flashWarn {
+    0%   { background: rgba(251,146,60,0.15); }
+    100% { background: transparent; }
+  }
+  .warn-flash { animation: flashWarn 0.5s ease-out; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Balcony Tile Planner</h1>
+  <span>30 × 30 cm · aligned to bottom-right</span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+
+    <!-- Budget: owned tiles -->
+    <div>
+      <div class="section-title">Owned tiles</div>
+      <div class="budget-block" style="margin-top:6px">
+        <div class="budget-header">
+          <div class="budget-label">52.5 tiles available</div>
+          <div class="budget-count green" id="ownedRemaining">52.5</div>
+        </div>
+        <div class="budget-bar-track">
+          <div class="budget-bar-fill green" id="ownedBar" style="width:100%"></div>
+        </div>
+        <div class="budget-sub" id="ownedUsed">0 used · 0.5 = cut</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Budget: extra pack -->
+    <div>
+      <div class="section-title">Extra pack</div>
+      <div class="budget-block" style="margin-top:6px">
+        <div class="budget-header">
+          <div class="budget-label">39 tiles available</div>
+          <div class="budget-count orange" id="extraRemaining">39</div>
+        </div>
+        <div class="budget-bar-track">
+          <div class="budget-bar-fill orange" id="extraBar" style="width:100%"></div>
+        </div>
+        <div class="budget-sub" id="extraUsed">0 used · not purchased yet</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Stats -->
+    <div class="stat-block">
+      <div class="section-title">Balcony area</div>
+      <div class="stat-value" id="areaVal">—</div>
+      <div class="stat-sub">m²</div>
+    </div>
+
+    <div class="stat-block">
+      <div class="section-title">Tiles placed</div>
+      <div class="stat-value" id="totalVal">0</div>
+      <div class="stat-sub" id="placedSub">0 full · 0 cut</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="section-title">Legend</div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:rgba(74,222,128,0.5);border:1px solid #4ade80"></div>
+        Full tile (owned)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:rgba(74,222,128,0.25);border:1px dashed #4ade80"></div>
+        Full tile (extra pack)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:rgba(251,146,60,0.5);border:1px solid #fb923c"></div>
+        Cut tile (owned)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:rgba(251,146,60,0.25);border:1px dashed #fb923c"></div>
+        Cut tile (extra pack)
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="hint">
+      Full tile = 1.0<br>
+      Cut tile = 0.5<br>
+      Owned budget first,<br>then extra pack.
+    </div>
+
+    <div class="btn-group">
+      <button class="btn-undo" onclick="undo()">↩ Undo</button>
+      <button class="btn-reset" onclick="resetAll()">✕ Reset all</button>
+    </div>
+
+  </aside>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="canvas"></canvas>
+  </div>
+</div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const TILE  = 30;    // cm per cell
+const SCALE = 1.5;   // px per cm
+
+const OWNED_MAX = 52.5;
+const EXTRA_MAX = 39;
+
+// ─── Balcony geometry (real-world cm) ─────────────────────────────────────────
+// Coordinate system:
+//   real_x = distance to the LEFT  from bottom-right corner (F)
+//   real_y = distance UPWARD       from bottom-right corner (F)
+//
+// Grid is aligned to the bottom-right corner (F = origin).
+// Canvas origin = bottom-right corner of the padded bounding box.
+// canvas_x = REAL_W - real_x,  canvas_y = REAL_H - real_y
+//
+// The bottom step dips 8cm BELOW the main floor (y < 0).
+// We add FLOOR_PAD below the origin so it's not cropped.
+
+const FLOOR_PAD = 15;  // cm below y=0 to ensure step is visible
+
+// Bounding box
+const REAL_W = 650;              // cm, padded right of origin (origin is at right)
+const REAL_H = 285 + FLOOR_PAD; // cm, total canvas height
+
+// Convert real → canvas pixels
+function cv(xL, yU) {
+  return [
+    (REAL_W - xL) * SCALE,
+    (REAL_H - FLOOR_PAD - yU) * SCALE
+  ];
+}
+
+// Arc intermediate points from GeoGebra (x=left from F, y=up from F, snapped)
+const ARC = [
+  [615.3, 177.7],  // M — arc base left
+  [598.6, 216.6],  // N
+  [587.1, 236.2],  // O
+  [564.0, 256.0],  // P
+  [516.6, 265.9],  // Q
+  [481.7, 265.7],  // R
+  [446.2, 265.7],  // S
+  [411.2, 256.5],  // T
+  [387.5, 235.9],  // U
+  [376.0, 216.0],  // V
+  [364.1, 173.2],  // W — arc base right
+];
+
+function buildPoly() {
+  const pts = [];
+
+  // Right wall: F(0,0) → C(0,172)
+  pts.push(cv(0,     0));
+  pts.push(cv(0,   172));
+
+  // Top edge: C → W
+  pts.push(cv(363, 172));
+
+  // Arc: W → M (going left and up)
+  for (let i = ARC.length - 1; i >= 0; i--) {
+    pts.push(cv(ARC[i][0], ARC[i][1]));
+  }
+
+  // M → L (down along left side)
+  pts.push(cv(616.6,  80.0));  // L
+
+  // L → K (diagonal)
+  pts.push(cv(594.7,  59.6));  // K
+
+  // K → J (right, stair top)
+  pts.push(cv(523.3,  59.8));  // J
+
+  // J → I (down, stair drop)
+  pts.push(cv(524.0,   0.3));  // I
+
+  // I → H (right to step edge)
+  pts.push(cv(477.7,   0.6));  // H
+
+  // H → G (step DOWN — goes below y=0)
+  pts.push(cv(478.3,  -8.0));  // G
+
+  // G → D (long bottom run rightward, staying at -8cm)
+  pts.push(cv(89.5,   -8.0));  // D
+
+  // D → E (step UP back to ~floor level)
+  pts.push(cv(89.8,    0.5));  // E
+
+  // E → F (back to origin)
+  pts.push(cv(0,       0));
+
+  return pts;
+}
+
+const poly = buildPoly();
+
+// ─── Canvas ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+canvas.width  = REAL_W * SCALE;
+canvas.height = REAL_H * SCALE;
+
+// Grid is aligned to bottom-right corner (F).
+// F in canvas coords:
+const F_CX = cv(0, 0)[0];  // canvas x of F
+const F_CY = cv(0, 0)[1];  // canvas y of F
+
+// Grid cell (col, row) top-left in canvas coords:
+// We measure columns leftward from F, rows upward from F.
+// col 0 starts at F going right (no balcony there), col 1 starts 0–30cm left of F, etc.
+// Actually: we want the grid origin AT F so that F is a grid corner.
+// col index c: canvas_x range = [F_CX - (c+1)*T, F_CX - c*T]
+// row index r: canvas_y range = [F_CY - (r+1)*T, F_CY - r*T]
+
+const T_PX = TILE * SCALE;  // tile size in pixels
+
+// Total grid dimensions
+const COLS = Math.ceil(REAL_W / TILE) + 1;
+const ROWS = Math.ceil(REAL_H / TILE) + 1;
+
+// ─── Point-in-polygon ─────────────────────────────────────────────────────────
+function pip(px, py) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+      inside = !inside;
+  }
+  return inside;
+}
+
+// ─── Cell classification ──────────────────────────────────────────────────────
+// Cell (c, r): top-left canvas corner = (F_CX - (c+1)*T_PX, F_CY - (r+1)*T_PX)
+function cellCanvasOrigin(c, r) {
+  return [F_CX - (c + 1) * T_PX, F_CY - (r + 1) * T_PX];
+}
+
+function classifyCell(c, r) {
+  const [x0, y0] = cellCanvasOrigin(c, r);
+  const x1 = x0 + T_PX, y1 = y0 + T_PX;
+  const tests = [
+    [x0+2,    y0+2],   [x1-2, y0+2],
+    [x0+2,    y1-2],   [x1-2, y1-2],
+    [(x0+x1)/2, (y0+y1)/2],
+    [x0+T_PX*.25, y0+T_PX*.25], [x0+T_PX*.75, y0+T_PX*.25],
+    [x0+T_PX*.25, y0+T_PX*.75], [x0+T_PX*.75, y0+T_PX*.75],
+  ];
+  const hits = tests.filter(([x, y]) => pip(x, y)).length;
+  if (hits === 0)            return 'outside';
+  if (hits === tests.length) return 'full';
+  return 'edge';
+}
+
+console.log('Classifying cells...');
+const cellType = Array.from({length: ROWS}, (_, r) =>
+  Array.from({length: COLS}, (_, c) => classifyCell(c, r))
+);
+console.log('Done.');
+
+// ─── Budget state ─────────────────────────────────────────────────────────────
+// Each placed tile: { type: 'full'|'edge', budget: 'owned'|'extra' }
+const placed  = {};   // key → { type, budget }
+const history = [];   // stack of keys
+const key = (r, c) => `${r},${c}`;
+
+function tileCost(type) {
+  return type === 'edge' ? 0.5 : 1.0;
+}
+
+function budgetUsed() {
+  let owned = 0, extra = 0;
+  for (const k in placed) {
+    const { type, budget } = placed[k];
+    const cost = tileCost(type);
+    if (budget === 'owned') owned += cost;
+    else extra += cost;
+  }
+  return { owned, extra };
+}
+
+function canPlace(type) {
+  const { owned, extra } = budgetUsed();
+  const cost = tileCost(type);
+  const ownedLeft = OWNED_MAX - owned;
+  const extraLeft = EXTRA_MAX - extra;
+  if (ownedLeft >= cost) return 'owned';
+  if (extraLeft >= cost) return 'extra';
+  return null; // blocked
+}
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid — aligned to F corner
+  ctx.strokeStyle = 'rgba(200,190,175,0.07)';
+  ctx.lineWidth = 0.5;
+  // Vertical lines
+  for (let c = 0; c <= COLS; c++) {
+    const x = F_CX - c * T_PX;
+    if (x < 0 || x > canvas.width) continue;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  // Horizontal lines
+  for (let r = 0; r <= ROWS; r++) {
+    const y = F_CY - r * T_PX;
+    if (y < 0 || y > canvas.height) continue;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+
+  // Balcony fill
+  ctx.beginPath();
+  ctx.moveTo(poly[0][0], poly[0][1]);
+  for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(200,190,175,0.05)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(200,190,175,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Placed tiles
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const t = cellType[r][c];
+      if (t === 'outside') continue;
+      const k = key(r, c);
+      const p = placed[k];
+      if (!p) continue;
+
+      const [x0, y0] = cellCanvasOrigin(c, r);
+      const isOwned = p.budget === 'owned';
+      const isEdge  = p.type   === 'edge';
+
+      if (isEdge) {
+        ctx.fillStyle   = isOwned ? 'rgba(251,146,60,0.42)' : 'rgba(251,146,60,0.22)';
+        ctx.fillRect(x0, y0, T_PX, T_PX);
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth   = 1;
+        ctx.setLineDash(isOwned ? [] : [3, 3]);
+        ctx.strokeRect(x0+0.5, y0+0.5, T_PX-1, T_PX-1);
+        ctx.setLineDash([]);
+      } else {
+        ctx.fillStyle   = isOwned ? 'rgba(74,222,128,0.35)' : 'rgba(74,222,128,0.18)';
+        ctx.fillRect(x0, y0, T_PX, T_PX);
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth   = 1;
+        ctx.setLineDash(isOwned ? [] : [3, 3]);
+        ctx.strokeRect(x0+0.5, y0+0.5, T_PX-1, T_PX-1);
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  updateUI();
+}
+
+// ─── UI update ────────────────────────────────────────────────────────────────
+function updateUI() {
+  const { owned, extra } = budgetUsed();
+
+  const ownedLeft = Math.max(0, OWNED_MAX - owned);
+  const extraLeft = Math.max(0, EXTRA_MAX - extra);
+
+  document.getElementById('ownedRemaining').textContent =
+    Number.isInteger(ownedLeft) ? ownedLeft : ownedLeft.toFixed(1);
+  document.getElementById('extraRemaining').textContent =
+    Number.isInteger(extraLeft) ? extraLeft : extraLeft.toFixed(1);
+
+  document.getElementById('ownedBar').style.width = (ownedLeft / OWNED_MAX * 100) + '%';
+  document.getElementById('extraBar').style.width = (extraLeft / EXTRA_MAX * 100) + '%';
+
+  document.getElementById('ownedUsed').textContent =
+    `${owned} used · ${(OWNED_MAX - owned).toFixed(1)} left`;
+  document.getElementById('extraUsed').textContent =
+    extra > 0
+      ? `${extra} used · ${(EXTRA_MAX - extra).toFixed(1)} left`
+      : 'not yet started';
+
+  // Count placed
+  let full = 0, cut = 0;
+  for (const k in placed) {
+    placed[k].type === 'edge' ? cut++ : full++;
+  }
+  const total = full + cut;
+  document.getElementById('totalVal').textContent = total;
+  document.getElementById('placedSub').textContent = `${full} full · ${cut} cut`;
+
+  // Area
+  let inside = 0;
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (cellType[r][c] !== 'outside') inside++;
+  document.getElementById('areaVal').textContent = (inside * TILE * TILE / 10000).toFixed(2);
+}
+
+// ─── Interaction ──────────────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  // Find which cell was clicked (relative to F corner)
+  const c = Math.floor((F_CX - mx) / T_PX);
+  const r = Math.floor((F_CY - my) / T_PX);
+
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+  const t = cellType[r][c];
+  if (t === 'outside') return;
+
+  const k = key(r, c);
+
+  if (placed[k]) {
+    // Remove tile
+    delete placed[k];
+    const i = history.lastIndexOf(k);
+    if (i !== -1) history.splice(i, 1);
+  } else {
+    // Place tile — check budget
+    const budget = canPlace(t);
+    if (!budget) {
+      // Flash warning
+      const wrap = document.getElementById('canvasWrap');
+      wrap.classList.remove('warn-flash');
+      void wrap.offsetWidth; // reflow
+      wrap.classList.add('warn-flash');
+      return;
+    }
+    placed[k] = { type: t, budget };
+    history.push(k);
+  }
+  draw();
+});
+
+function undo() {
+  if (!history.length) return;
+  delete placed[history.pop()];
+  draw();
+}
+
+function resetAll() {
+  Object.keys(placed).forEach(k => delete placed[k]);
+  history.length = 0;
+  draw();
+}
+
+draw();
+</script>
+</body>
+</html>
