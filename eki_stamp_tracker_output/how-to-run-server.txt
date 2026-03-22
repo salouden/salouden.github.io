@@ -1,2 +1,0 @@
-cd eki_stamp_tracker/staging
-python3 -m http.server 8000
