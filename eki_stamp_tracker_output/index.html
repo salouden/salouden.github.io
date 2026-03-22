@@ -33,12 +33,7 @@
         /* ── Map ──────────────────────────────────────────────────────────── */
         #map { height: 100vh; width: 100%; }
 
-        /* Dark map tile filter */
-        .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.85) saturate(0.7); }
-        /* Keep markers/popups unfiltered */
-        .leaflet-marker-pane,
-        .leaflet-popup-pane,
-        .leaflet-overlay-pane { filter: none; }
+        /* Using CartoDB dark_all tiles natively — no CSS filter needed */
 
         /* Leaflet attribution dark */
         .leaflet-control-attribution {
@@ -503,7 +498,7 @@
         '北海道新幹線':         { color: '#009B6B', en: 'Hokkaido Shinkansen' },
         '西九州線':             { color: '#C1272D', en: 'Nishi-Kyushu Shinkansen' },
         // ── JR West ──
-        '山陰線':               { color: '#F68B1E', en: 'San'in Line' },
+        '山陰線':               { color: '#F68B1E', en: "San'in Line" },
         '山陽線':               { color: '#F68B1E', en: 'Sanyo Line' },
         '関西線':               { color: '#F68B1E', en: 'Kansai Line' },
         '大阪環状線':           { color: '#E56000', en: 'Osaka Loop Line' },
